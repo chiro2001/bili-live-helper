@@ -1,0 +1,1 @@
+{"cmd": "DANMU_MSG", "decoration": {"name": "\u5609\u5fc3\u7cd6", "level": 0, "available": true, "raw": [5, "\u5609\u5fc3\u7cd6", "\u5609\u7136\u4eca\u5929\u5403\u4ec0\u4e48", 22637261, 6126494, "", 0, 12632256, 12632256, 12632256, 0, 0, 672328094]}, "name": "\u829d\u697c", "text": "hum", "receive_time": "2021-09-25 23:00:37.856356", "receive_time_utc": 1632582037.0}

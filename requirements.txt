@@ -1,0 +1,6 @@
+qtpy
+PyQt5
+qasync
+colorlog
+numpy
+pymongo
