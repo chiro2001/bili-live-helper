@@ -33,6 +33,12 @@ class RunningConfig:
             'debug': True,
             'offset': [0, 0],
             'version': 0.01,
+            'pool-size': 12,
+            'font': '微软雅黑',
+            'font-size': 13,
+            'font-weight': 75,
+            'font-bold': False,
+            'border-width': 4,
             'room': 744432,
             'username': '',
             'password': ''
@@ -73,12 +79,19 @@ class RunningConfig:
             json.dump(self.config, f, sort_keys=True, indent=2, ensure_ascii=False)
 
 
-class Danmaku(str):
+class Danmaku:
     class Decoration:
-        def __init__(self, available: bool = False, name: str = '', level: int = 0, raw: list = None):
-            self.name, self.level = name, level
-            self.available = available
-            self.raw: list = raw if raw is not None else []
+        def __init__(self, available: bool = False, name: str = '', level: int = 0, raw: list = None,
+                     data: dict = None):
+            if data is not None:
+                self.name, self.level, self.available, self.raw = data.get('name'), \
+                                                                  data.get('level'), \
+                                                                  data.get('available'), \
+                                                                  data.get('raw')
+            else:
+                self.name, self.level = name, level
+                self.available = available
+                self.raw: list = raw if raw is not None else []
 
         @staticmethod
         def parse(info_content: list):
@@ -86,21 +99,32 @@ class Danmaku(str):
                 return Danmaku.Decoration(available=False, raw=info_content)
             return Danmaku.Decoration(available=True, name=info_content[1], level=0, raw=info_content)
 
-    def __init__(self, dic: dict):
-        super().__init__()
-        self.cmd = dic.get('cmd', None)
-        info: list = dic.get('info', None)
-        if info is None:
-            raise ValueError(f"Need dic[cmd, info], got: {dic}")
-        if self.cmd != 'DANMU_MSG':
-            raise TypeError(f"Need dic[cmd=DANMU_MSG]! got: {self.cmd}")
-        self.decoration: Danmaku.Decoration = Danmaku.Decoration.parse(info[3])
-        try:
-            self.name: str = info[2][1]
-            self.text: str = info[1]
-        except IndexError:
-            raise ValueError(f"Error info format: {info}")
-        self.receive_time = datetime.datetime.now()
+        @staticmethod
+        def load(data: dict):
+            return Danmaku.Decoration(data=data)
+
+    def __init__(self, dic: dict = None, data: dict = None):
+        # super().__init__()
+        if data is not None:
+            self.cmd = data.get('cmd', None)
+            self.decoration = Danmaku.Decoration.load(data.get('decoration'))
+            self.name = data.get('name')
+            self.text = data.get('text')
+            self.receive_time = data.get('receive_time')
+        else:
+            self.cmd = dic.get('cmd', None)
+            info: list = dic.get('info', None)
+            if info is None:
+                raise ValueError(f"Need dic[cmd, info], got: {dic}")
+            if self.cmd != 'DANMU_MSG':
+                raise TypeError(f"Need dic[cmd=DANMU_MSG]! got: {self.cmd}")
+            self.decoration: Danmaku.Decoration = Danmaku.Decoration.parse(info[3])
+            try:
+                self.name: str = info[2][1]
+                self.text: str = info[1]
+            except IndexError:
+                raise ValueError(f"Error info format: {info}")
+            self.receive_time = datetime.datetime.now()
 
     @staticmethod
     def parse(dic: dict):
@@ -112,9 +136,15 @@ class Danmaku(str):
         return Danmaku({
             'cmd': "DANMU_MSG",
             'info': [
-                [], text, [0, name], [None, deco] if deco is not None else [], [], [], 0, 0, None, {}, 0, 0, None, None, 0, 0
+                [], text, [0, name], [None, deco] if deco is not None else [], [], [], 0, 0, None, {}, 0, 0, None, None,
+                0, 0
             ]
         })
+
+    @staticmethod
+    # def from_str(text: str, name: str = 'Chiro', deco: str = '番茄大'):
+    def system(text: str):
+        return Danmaku.from_str(text, name='消息', deco='系统')
 
     def __str__(self):
         return f"{'' if not self.decoration.available else f'[{self.decoration.name}]'}{self.name}: {self.text}"
@@ -130,14 +160,18 @@ class Danmaku(str):
         data['receive_time_utc'] = time.mktime(self.receive_time.timetuple())
         return data
 
+    @staticmethod
+    def load(data: dict):
+        return Danmaku(data=data)
+
 
 class DanmakuLabel(QLabel):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, pen_width: int = 4, **kwargs):
         super(DanmakuLabel, self).__init__(*args, **kwargs)
         # logger.warning(f"DanmakuLabel({self.text()})")
         self.fm = QFontMetrics(self.font())
         self.font_id = id(self.font())
-        self.pen_width_size = kwargs.get('pen_width', 4)
+        self.pen_width_size = pen_width
         self.danmaku: Danmaku = None
         self.cache_image: QPixmap = None
         self.cache_id: int = 0
@@ -250,7 +284,9 @@ class DanmakuLogger:
         self.db = self.client[kwargs.get('database', DanmakuLogger.DEFAULT_DB)]
         self.col = self.db[kwargs.get('collection', DanmakuLogger.DEFAULT_COL)]
 
-    def log(self, danmaku: Danmaku):
+    def log(self, danmaku: Danmaku, print_it: bool = True):
+        if print_it:
+            logger.info(f'{str(danmaku)}')
         try:
             with open(self.filename_data, 'a+', encoding='utf8') as f:
                 f.write(json.dumps(danmaku.dump()) + "\n")
@@ -264,6 +300,13 @@ class DanmakuLogger:
         except Exception as e:
             logger.error(f"{e.__class__.__name__} when logging danmaku")
             traceback.print_exc()
+
+    # 获取最近几条内容
+    def tail(self, count: int = 10) -> list:
+        data = self.col.find({}, {'_id': 0}).sort("receive_time", -1).limit(count)
+        danmaku_tail = [Danmaku.load(d) for d in data]
+        # print(danmaku_tail)
+        return danmaku_tail
 
 
 class Main(QWidget):
@@ -316,15 +359,17 @@ class Main(QWidget):
 
         self.font = QFont()
         # 字体
-        self.font.setFamily('微软雅黑')
+        self.font.setFamily(self.running_config.config.get('font', '微软雅黑'))
         # 加粗
-        # self.font.setBold(True)
+        self.font.setBold(self.running_config.config.get('font-bold', False))
         # 大小
-        self.font.setPointSize(13)
-        self.font.setWeight(75)
+        self.font.setPointSize(self.running_config.config.get('font-size', 12))
+        self.font.setWeight(self.running_config.config.get('font-weight', 75))
         self.fm = QFontMetrics(self.font)
 
-        self.labels = [DanmakuLabel(self) for _ in range(self.running_config.config.get('pool_size', 10) + 1)]
+        # self.labels = [DanmakuLabel(self) for _ in range(self.running_config.config.get('pool-size', 10) + 1)]
+        self.labels = [DanmakuLabel(self, pen_width=self.running_config.config.get('border-width', 4)) for _ in
+                       range(self.running_config.config.get('pool-size', 10))]
         # [0] 为即将插入的弹幕
         # 垂直布局相关属性设置
         self.vbox = QVBoxLayout()
@@ -345,8 +390,8 @@ class Main(QWidget):
         self.th_loop.start()
         self.th_insert = Thread(target=self.do_insert, daemon=True)
 
-        self.danmaku_pool = [None for _ in range(self.running_config.config.get('pool_size', 10))]
-        for i in range(self.running_config.config.get('pool_size', 10)):
+        self.danmaku_pool = [None for _ in range(self.running_config.config.get('pool-size', 10))]
+        for i in range(self.running_config.config.get('pool-size', 10)):
             # text = f'[{i:2}]HI测试测试TEST' if i % 2 == 0 else 'TTTT'
             text = ''
             danmaku = Danmaku.from_str(text)
@@ -366,8 +411,8 @@ class Main(QWidget):
             return
         if cmd == 'DANMU_MSG':
             danmaku = Danmaku(dic)
-            logger.info(f'received: {danmaku}')
-            self.insert_danmaku(danmaku)
+            # logger.info(f'received: {danmaku}')
+            self.insert_danmaku(danmaku, print_it=True, save=True)
         else:
             pass
 
@@ -377,8 +422,24 @@ class Main(QWidget):
         loop.run_until_complete(self.client_loop())
         # asyncio.ensure_future(self.client_loop(), loop=_loop_main_window)
 
+    def log(self, text: str, **kwargs):
+        danmaku: Danmaku = Danmaku.system(text)
+        self.insert_danmaku(danmaku=danmaku, save=False, **kwargs)
+
     async def client_loop(self):
-        self.client = bilibiliClient(self.running_config.config['room'], "None", danmaku_parser=self.danmaku_parser)
+        self.log('加载往期弹幕...')
+        old_danmaku = self.danmaku_logger.tail(count=self.running_config.config.get('pool-size', 10))
+        old_danmaku.reverse()
+        for danmaku in old_danmaku:
+            # print(danmaku)
+            self.insert_danmaku(danmaku=danmaku, save=False)
+        self.log('正在连接服务器...')
+        try:
+            self.client = bilibiliClient(self.running_config.config['room'], "None", danmaku_parser=self.danmaku_parser)
+        except Exception as e:
+            self.log(f'服务器连接失败！{e.__class__.__name__}: {e}')
+            return
+        self.log(f'服务器连接成功')
         try:
             while True:
                 await self.client.connectServer()
@@ -401,18 +462,20 @@ class Main(QWidget):
             label.setFont(self.font)
             self.vbox.addWidget(label, 0, Qt.AlignLeft)
 
-    def insert_danmaku(self, danmaku: Danmaku):
-        self.danmaku_logger.log(danmaku)
-        self.insert_queue.put(danmaku)
+    def insert_danmaku(self, danmaku: Danmaku, save: bool = True, show: bool = True, **kwargs):
+        if save:
+            self.danmaku_logger.log(danmaku, **kwargs)
+        if show:
+            self.insert_queue.put(danmaku)
 
     def do_insert(self):
-        # print(f'do_insert start.')
-        danmaku = self.insert_queue.get(block=True)
-        # logger.warning(f"got danmaku to insert: {danmaku}")
         vbox_size = [self.vbox.geometry().width(), self.vbox.geometry().height()]
         if vbox_size[0] == vbox_size[1] == 0:
             time.sleep(0.1)
             self.do_insert()
+        # print(f'do_insert start.')
+        danmaku = self.insert_queue.get(block=True)
+        # logger.warning(f"got danmaku to insert: {danmaku}")
         # logger.warning(f'vbox_size = {vbox_size}')
         self.lock.acquire()
         self.danmaku_pool = [danmaku, *(self.danmaku_pool[:-1])]

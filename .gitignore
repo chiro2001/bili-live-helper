@@ -132,3 +132,6 @@ conf/bilibili.conf
 conf/user.conf
 
 bili-live-helper.json
+
+danmaku_data.log.txt
+danmaku_text.log.txt
