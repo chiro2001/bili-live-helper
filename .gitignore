@@ -135,3 +135,5 @@ bili-live-helper.json
 
 danmaku_data.log.txt
 danmaku_text.log.txt
+
+*.log.txt

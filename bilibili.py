@@ -1,3 +1,4 @@
+import json
 import sys
 from imp import reload
 import configloader
@@ -640,3 +641,73 @@ class bilibili():
         url = 'http://127.0.0.1:3000/enc'
         response = requests.post(url, json=data).json()
         return response['s']
+
+    def send_danmaku(self, text: str, **kwargs):
+        url = 'https://api.live.bilibili.com/msg/send'
+        kwargs['danmaku'] = text
+        kwargs['divider'] = '371512060927521678142041268089'
+        kwargs['divider'] = '2062603748151908969842908961'
+        kwargs['divider'] = '15851248152274867037297028506'
+        kwargs['time_utc'] = int(time.time()) - 1
+        kwargs['csrf'] = self.dic_bilibili['csrf']
+        kwargs['csrf_token'] = self.dic_bilibili['csrf']
+        print(f'kwargs: {kwargs}')
+
+        data = '''
+-----------------------------{divider}
+Content-Disposition: form-data; name="bubble"
+
+0
+-----------------------------{divider}
+Content-Disposition: form-data; name="msg"
+
+{danmaku}
+-----------------------------{divider}
+Content-Disposition: form-data; name="color"
+
+16777215
+-----------------------------{divider}
+Content-Disposition: form-data; name="mode"
+
+1
+-----------------------------{divider}
+Content-Disposition: form-data; name="fontsize"
+
+25
+-----------------------------{divider}
+Content-Disposition: form-data; name="rnd"
+
+{time_utc}
+-----------------------------{divider}
+Content-Disposition: form-data; name="roomid"
+
+{roomid}
+-----------------------------{divider}
+Content-Disposition: form-data; name="csrf"
+
+{csrf}
+-----------------------------{divider}
+Content-Disposition: form-data; name="csrf_token"
+
+{csrf_token}
+-----------------------------{divider}--'''.format(**kwargs)
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:92.0) Gecko/20100101 Firefox/92.0',
+            'Content-Type': f'multipart/form-data; boundary=---------------------------{kwargs.get("divider")}',
+            "Referer": "https://live.bilibili.com/",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-site",
+            "TE": "trailers",
+            "Cookie": self.dic_bilibili['cookie']
+        }
+        # print('data: ')
+        # print(data)
+        # print(headers)
+        resp = requests.post(url, data=data, headers=headers)
+        return resp
+
+
+if __name__ == '__main__':
+    _resp = bilibili().send_danmaku('TEST', roomid=744432)
+    print(_resp.text)

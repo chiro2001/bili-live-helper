@@ -104,7 +104,7 @@ class login():
     #     response = requests.get(url, allow_redirects=False)
     #     return response.cookies.get_dict(domain=".bilibili.com")
 
-    def login(self):
+    def login(self) -> bool:
         username = str(bilibili().dic_bilibili['account']['username'])
         password = str(bilibili().dic_bilibili['account']['password'])
         if username != "":
@@ -150,13 +150,16 @@ class login():
                 }
                 configloader.write2bilibili(dic_saved_session)
                 Printer().printer(f"登录成功", "Info", "green")
+                return None
             except:
                 Printer().printer(f"登录失败,错误信息为:{response.json()}", "Error", "red")
+                return response.json()
 
     async def login_new(self):
         if bilibili().dic_bilibili['saved-session']['cookie']:
             Printer().printer(f"复用cookie", "Info", "green")
             bilibili().load_session(bilibili().dic_bilibili['saved-session'])
+            return None
         else:
             return self.login()
 

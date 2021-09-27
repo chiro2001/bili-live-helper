@@ -10,159 +10,25 @@ import webbrowser
 from queue import Queue
 import qasync
 import pymongo
+import requests
 
 from constant import Constant
 import utils
+from danmaku import Danmaku
+from danmaku_logger import DanmakuLogger
+from running_config import RunningConfig
 from statistics import Statistics
 from bilibiliCilent import bilibiliClient
-from PyQt5.QtCore import QPoint, Qt, QSize
+from login import login
+from PyQt5.QtCore import QPoint, Qt, QSize, pyqtSignal
 from PyQt5.QtGui import QMouseEvent, QFont, QPen, QFontMetrics, QPainter, QPainterPath, QBrush, QColor, QPixmap, QImage
-from PyQt5.QtWidgets import QWidget, QApplication, QMenu, qApp, QLabel, QVBoxLayout
+from PyQt5.QtWidgets import QWidget, QApplication, QMenu, qApp, QLabel, QVBoxLayout, QMainWindow, QLineEdit, \
+    QPushButton, QHBoxLayout
 from qtpy import QtWidgets, QtCore, QtGui
 from threading import Thread, Lock
 from base_logger import logger
 import numpy as np
-
-
-class RunningConfig:
-    FILENAME = 'bili-live-helper.json'
-    VERSION = 0.11
-
-    def __init__(self) -> None:
-        self.config = {
-            'debug': True,
-            'offset': [0, 0],
-            'version': 0.01,
-            'pool-size': 12,
-            'font': '微软雅黑',
-            'font-size': 13,
-            'font-weight': 75,
-            'font-bold': False,
-            'border-width': 4,
-            'room': 744432,
-            'username': '',
-            'password': ''
-        }
-        self.load()
-
-    def load(self):
-        try:
-            with open(self.FILENAME, "r", encoding="utf-8") as f:
-                c = json.load(f)
-                if 'version' in c:
-                    if c['version'] > RunningConfig.VERSION:
-                        raise RuntimeError(f"Newer config file detected ({c['version']})")
-                    else:
-                        del c['version']
-                self.config.update(c)
-        except FileNotFoundError:
-            pass
-        Constant.debug = self.config['debug']
-        # 替换 conf
-        file_list = os.listdir('conf/')
-        for filename in file_list:
-            if filename.endswith('.template.conf'):
-                with open(os.path.join('conf/', filename), 'r', encoding='utf8') as f:
-                    filename_new = filename.replace('.template.conf', '.conf')
-                    data = f.read()
-                    for key in self.config:
-                        data.replace('{%' + key + '%}', str(self.config[key]))
-                    with open(os.path.join('conf/', filename_new), 'w', encoding='utf8') as w:
-                        w.write(data)
-
-        self.save()
-
-    def save(self):
-        self.config['debug'] = Constant.debug
-        # logger.warning(f"save config: {self.config}")
-        with open(self.FILENAME, "w", encoding="utf-8") as f:
-            json.dump(self.config, f, sort_keys=True, indent=2, ensure_ascii=False)
-
-
-class Danmaku:
-    class Decoration:
-        def __init__(self, available: bool = False, name: str = '', level: int = 0, raw: list = None,
-                     data: dict = None):
-            if data is not None:
-                self.name, self.level, self.available, self.raw = data.get('name'), \
-                                                                  data.get('level'), \
-                                                                  data.get('available'), \
-                                                                  data.get('raw')
-            else:
-                self.name, self.level = name, level
-                self.available = available
-                self.raw: list = raw if raw is not None else []
-
-        @staticmethod
-        def parse(info_content: list):
-            if info_content is None or (isinstance(info_content, list) and len(info_content) == 0):
-                return Danmaku.Decoration(available=False, raw=info_content)
-            return Danmaku.Decoration(available=True, name=info_content[1], level=0, raw=info_content)
-
-        @staticmethod
-        def load(data: dict):
-            return Danmaku.Decoration(data=data)
-
-    def __init__(self, dic: dict = None, data: dict = None):
-        # super().__init__()
-        if data is not None:
-            self.cmd = data.get('cmd', None)
-            self.decoration = Danmaku.Decoration.load(data.get('decoration'))
-            self.name = data.get('name')
-            self.text = data.get('text')
-            self.receive_time = data.get('receive_time')
-        else:
-            self.cmd = dic.get('cmd', None)
-            info: list = dic.get('info', None)
-            if info is None:
-                raise ValueError(f"Need dic[cmd, info], got: {dic}")
-            if self.cmd != 'DANMU_MSG':
-                raise TypeError(f"Need dic[cmd=DANMU_MSG]! got: {self.cmd}")
-            self.decoration: Danmaku.Decoration = Danmaku.Decoration.parse(info[3])
-            try:
-                self.name: str = info[2][1]
-                self.text: str = info[1]
-            except IndexError:
-                raise ValueError(f"Error info format: {info}")
-            self.receive_time = datetime.datetime.now()
-
-    @staticmethod
-    def parse(dic: dict):
-        return Danmaku(dic)
-
-    @staticmethod
-    # def from_str(text: str, name: str = 'Chiro', deco: str = '番茄大'):
-    def from_str(text: str, name: str = '', deco: str = None):
-        return Danmaku({
-            'cmd': "DANMU_MSG",
-            'info': [
-                [], text, [0, name], [None, deco] if deco is not None else [], [], [], 0, 0, None, {}, 0, 0, None, None,
-                0, 0
-            ]
-        })
-
-    @staticmethod
-    # def from_str(text: str, name: str = 'Chiro', deco: str = '番茄大'):
-    def system(text: str):
-        return Danmaku.from_str(text, name='消息', deco='系统')
-
-    def __str__(self):
-        return f"{'' if not self.decoration.available else f'[{self.decoration.name}]'}{self.name}: {self.text}"
-
-    def __getstate__(self) -> dict:
-        data = copy.deepcopy(self.__dict__)
-        data['decoration'] = self.decoration.__dict__
-        return data
-
-    def dump(self) -> str:
-        data = self.__getstate__()
-        data['receive_time'] = str(self.receive_time)
-        data['receive_time_utc'] = time.mktime(self.receive_time.timetuple())
-        return data
-
-    @staticmethod
-    def load(data: dict):
-        return Danmaku(data=data)
+from pynput import keyboard
 
 
 class DanmakuLabel(QLabel):
@@ -271,52 +137,45 @@ class DanmakuLabel(QLabel):
             painter.end()
 
 
-class DanmakuLogger:
-    DEFAULT_FILENAME_DATA_TXT = 'danmaku_data.log.txt'
-    DEFAULT_FILENAME_TEXT_TXT = 'danmaku_text.log.txt'
-    DEFAULT_DB = 'bili_live_helper'
-    DEFAULT_COL = 'danmaku'
+class DanmakuInput(QWidget):
+    # _signal = pyqtSignal(str)
 
-    def __init__(self, **kwargs):
-        self.client = pymongo.MongoClient()
-        self.filename_data = kwargs.get('filename_data', DanmakuLogger.DEFAULT_FILENAME_DATA_TXT)
-        self.filename_text = kwargs.get('filename_text', DanmakuLogger.DEFAULT_FILENAME_TEXT_TXT)
-        self.db = self.client[kwargs.get('database', DanmakuLogger.DEFAULT_DB)]
-        self.col = self.db[kwargs.get('collection', DanmakuLogger.DEFAULT_COL)]
+    def __init__(self, config: RunningConfig):
+        super(DanmakuInput, self).__init__()
+        self.running_config = config
+        self.box = QHBoxLayout()
+        self.box.setDirection(QVBoxLayout.LeftToRight)
+        self.box.setSpacing(0)
+        self.line_edit = QLineEdit()
+        # self.line_edit.textChanged.connect(self.on_change)
+        # self.line_edit.editingFinished.connect(self.on_finish)
+        self.box.addWidget(self.line_edit)
+        # self.setCentralWidget(self.line_edit)
 
-    def log(self, danmaku: Danmaku, print_it: bool = True):
-        if print_it:
-            logger.info(f'{str(danmaku)}')
-        try:
-            with open(self.filename_data, 'a+', encoding='utf8') as f:
-                f.write(json.dumps(danmaku.dump()) + "\n")
-            with open(self.filename_text, 'a+', encoding='utf8') as f:
-                f.write(f'[{str(danmaku.receive_time).split(".")[0]}] {str(danmaku)}\n')
-        except Exception as e:
-            logger.error(f"{e.__class__.__name__} when logging danmaku")
-            traceback.print_exc()
-        try:
-            self.col.insert_one(danmaku.__getstate__())
-        except Exception as e:
-            logger.error(f"{e.__class__.__name__} when logging danmaku")
-            traceback.print_exc()
+        self.button = QPushButton("&Send")
+        # self.button.clicked.connect(self.on_finish)
+        self.box.addWidget(self.button)
+        self.setLayout(self.box)
+        # self.setCentralWidget(self.button)
 
-    # 获取最近几条内容
-    def tail(self, count: int = 10) -> list:
-        data = self.col.find({}, {'_id': 0}).sort("receive_time", -1).limit(count)
-        danmaku_tail = [Danmaku.load(d) for d in data]
-        # print(danmaku_tail)
-        return danmaku_tail
+    # def on_change(self, text: str):
+    #     # self.text = text
+    #     pass
+
+    def on_finish(self):
+        text = self.line_edit.text()
+        print(text)
+        # self._signal.emit(text)
 
 
 class Main(QWidget):
     def __init__(self, debug: bool = False):
-        super().__init__()
+        super(Main, self).__init__()
         try:
             self.running_config = RunningConfig()
         except json.decoder.JSONDecodeError as e:
             msg_box = QtWidgets.QMessageBox()
-            msg_box.critical(QWidget=self, p_str=f"配置文件{RunningConfig.FILENAME}错误", p_str_1=str(e), buttons=msg_box.Yes)
+            msg_box.critical(self, f"配置文件{RunningConfig.FILENAME}错误", str(e), msg_box.Yes)
             sys.exit(1)
         Constant.debug = debug
 
@@ -326,14 +185,18 @@ class Main(QWidget):
         self._move_lock = Lock()
         self._is_quiting = False
 
-        self.setWindowFlags(Qt.FramelessWindowHint |
-                            QtCore.Qt.WindowStaysOnTopHint | Qt.Tool)
-        # 设置窗口背景透明
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-        self.setWindowOpacity(0.7)
+        # self.setWindowFlags(
+        #     Qt.FramelessWindowHint | QtCore.Qt.WindowStaysOnTopHint | Qt.Tool | Qt.WA_TransparentForMouseEvents)
+        # # 设置窗口背景透明
+        # self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        # self.setWindowOpacity(self.running_config.config.get('window-opacity', 0.4))
+
         self.show()
 
         self.lock = Lock()
+        self.pressed_time = []
+        self.pressed_lock = Lock()
+        self.danmaku_input = DanmakuInput(self.running_config)
 
         try:
             pass
@@ -372,8 +235,10 @@ class Main(QWidget):
                        range(self.running_config.config.get('pool-size', 10))]
         # [0] 为即将插入的弹幕
         # 垂直布局相关属性设置
+
         self.vbox = QVBoxLayout()
-        # self.vbox_border = QVBoxLayout()
+        self.vbox_border = QVBoxLayout()
+        # self.vbox = QHBoxLayout()
         # self.vbox = QHBoxLayout()
         self.vbox.setSpacing(0)
         self.vbox.setContentsMargins(0, 0, 0, 0)
@@ -381,11 +246,19 @@ class Main(QWidget):
         self.vbox.setDirection(QVBoxLayout.TopToBottom)
         # self.vbox_border.addChildLayout(self.vbox)
 
-        # self.setLayout(self.vbox_border)
-        self.setLayout(self.vbox)
+        self.button_send = QPushButton('&Send')
+        self.button_send.clicked.connect(self.start_new_window)
+        vbox_widget = QWidget()
+        vbox_widget.setLayout(self.vbox)
+        # self.vbox_boarder.addWidget(self.vbox)
+        self.vbox_border.addWidget(vbox_widget)
+        self.vbox_border.addWidget(self.button_send)
+        self.setLayout(self.vbox_border)
+        # self.setLayout(self.vbox)
 
         self.anim: QtCore.QPropertyAnimation = None
 
+        self.th_send_danmaku_listener = Thread(target=self.send_danmaku_listener, daemon=True)
         self.th_loop = Thread(target=self.loop, daemon=True)
         self.th_loop.start()
         self.th_insert = Thread(target=self.do_insert, daemon=True)
@@ -403,6 +276,61 @@ class Main(QWidget):
         self.th_insert.start()
         self.client: bilibiliClient = None
         self.client_loop_start()
+
+    def global_keyboard_hook_start(self):
+        try:
+            self.pressed_time = []
+            with keyboard.Listener(
+                    on_press=self.on_keyboard_press,
+                    on_release=self.on_keyboard_release)as listener:
+                listener.join()
+        except Exception as e:
+            logger.error(f"kbk_hook(): {e.__class__.__name__} {e}")
+
+    @staticmethod
+    def get_key_code(key):
+        try:
+            key_code = chr(key.vk)
+        except AttributeError:
+            key_code = key.name
+        return key_code
+
+    def on_keyboard_press(self, key):
+        key_code = self.get_key_code(key)
+        print('pressed', key_code)
+        if self.running_config.config.get('send-danmaku-press-key', 'ctrl') in key_code:
+            self.pressed_time.append((time.time(), key_code))
+
+    def on_keyboard_release(self, key):
+        key_code = self.get_key_code(key)
+        print('released', key_code)
+        self.pressed_lock.acquire()
+        time_now = time.time()
+        if len(self.pressed_time) > 0:
+            while time_now - self.pressed_time[0][0] > self.running_config.config.get('send-danmaku-press-time', 2.0):
+                print(f'deleted: {self.pressed_time[0]}')
+                self.pressed_time = self.pressed_time[1:]
+        if self.running_config.config.get('send-danmaku-press-key', 'ctrl') in key_code:
+            count = 0
+            for i in range(len(self.pressed_time) - 1, -1, -1):
+                if self.pressed_time[i][1] == key_code:
+                    count += 1
+                    if count >= self.running_config.config.get('send-danmaku-press-times', 2):
+                        # TODO: Send danmaku!
+                        # resp = self.client.bilibili.send_danmaku('DANMAKU!!',
+                        #                                          roomid=self.running_config.config.get('room'))
+                        # logger.warning(f'{resp.text}')
+                        logger.warning(f'show()!!')
+                        # self.danmaku_input.show()
+                        # window_.show()
+                        break
+        self.pressed_lock.release()
+
+    def start_new_window(self):
+        self.danmaku_input.show()
+
+    def send_danmaku_listener(self):
+        self.global_keyboard_hook_start()
 
     async def danmaku_parser(self, dic: dict):
         # print(f'dic = {dic}')
@@ -433,6 +361,13 @@ class Main(QWidget):
         for danmaku in old_danmaku:
             # print(danmaku)
             self.insert_danmaku(danmaku=danmaku, save=False)
+        self.log('正在登录账号...')
+        login_result = await login().login_new()
+        if login_result is not None:
+            self.log('账号登录失败!')
+            logger.warning(f"{login_result}")
+        else:
+            self.log('账号登录成功')
         self.log('正在连接服务器...')
         try:
             self.client = bilibiliClient(self.running_config.config['room'], "None", danmaku_parser=self.danmaku_parser)
@@ -440,6 +375,9 @@ class Main(QWidget):
             self.log(f'服务器连接失败！{e.__class__.__name__}: {e}')
             return
         self.log(f'服务器连接成功')
+        # resp = self.client.bilibili.send_danmaku('HI!!', roomid=744432)
+        # logger.warning(f'{resp.text}')
+        self.th_send_danmaku_listener.start()
         try:
             while True:
                 await self.client.connectServer()
@@ -554,7 +492,7 @@ class Main(QWidget):
                 # self.insert_danmaku(Danmaku.from_str(f'Test: [{ii:2}]'))
                 ii += 1
                 # print(f'insert done')
-                time.sleep(2)
+                time.sleep(20)
         except Exception as e:
             logger.error(e)
             if Constant.debug:
@@ -574,5 +512,8 @@ if __name__ == '__main__':
     app = qasync.QApplication(sys.argv)
     _loop_main_window = qasync.QEventLoop(app)
     asyncio.set_event_loop(_loop_main_window)
-    ex = Main(debug=True)
+    main_ = Main(debug=True)
+    # _conf = RunningConfig()
+    # window_ = DanmakuInput(_conf)
+    # window_.show()
     sys.exit(app.exec_())

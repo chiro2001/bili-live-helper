@@ -4,3 +4,4 @@ qasync
 colorlog
 numpy
 pymongo
+pynput
