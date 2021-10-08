@@ -651,7 +651,7 @@ class bilibili():
         kwargs['time_utc'] = int(time.time()) - 1
         kwargs['csrf'] = self.dic_bilibili['csrf']
         kwargs['csrf_token'] = self.dic_bilibili['csrf']
-        print(f'kwargs: {kwargs}')
+        # print(f'kwargs: {kwargs}')
 
         data = '''
 -----------------------------{divider}
@@ -690,7 +690,7 @@ Content-Disposition: form-data; name="csrf"
 Content-Disposition: form-data; name="csrf_token"
 
 {csrf_token}
------------------------------{divider}--'''.format(**kwargs)
+-----------------------------{divider}--'''.format(**kwargs).encode('utf-8')
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:92.0) Gecko/20100101 Firefox/92.0',
             'Content-Type': f'multipart/form-data; boundary=---------------------------{kwargs.get("divider")}',

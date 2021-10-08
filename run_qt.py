@@ -137,37 +137,36 @@ class DanmakuLabel(QLabel):
             painter.end()
 
 
+# noinspection PyUnresolvedReferences
 class DanmakuInput(QWidget):
-    # _signal = pyqtSignal(str)
+    signal = pyqtSignal(str)
 
-    def __init__(self, config: RunningConfig):
-        super(DanmakuInput, self).__init__()
+    def __init__(self, parent: QWidget, config: RunningConfig):
+        super(DanmakuInput, self).__init__(parent)
         self.running_config = config
         self.box = QHBoxLayout()
         self.box.setDirection(QVBoxLayout.LeftToRight)
         self.box.setSpacing(0)
+        self.box.setContentsMargins(0, 0, 0, 0)
         self.line_edit = QLineEdit()
-        # self.line_edit.textChanged.connect(self.on_change)
-        # self.line_edit.editingFinished.connect(self.on_finish)
+        self.line_edit.editingFinished.connect(self.on_finish)
         self.box.addWidget(self.line_edit)
-        # self.setCentralWidget(self.line_edit)
-
         self.button = QPushButton("&Send")
-        # self.button.clicked.connect(self.on_finish)
+        self.button.clicked.connect(self.on_finish)
         self.box.addWidget(self.button)
         self.setLayout(self.box)
-        # self.setCentralWidget(self.button)
-
-    # def on_change(self, text: str):
-    #     # self.text = text
-    #     pass
 
     def on_finish(self):
         text = self.line_edit.text()
-        print(text)
-        # self._signal.emit(text)
+        if len(text) == 0:
+            return
+        self.line_edit.clearFocus()
+        self.line_edit.setText("")
+        # print(text)
+        self.signal.emit(text)
 
 
+# noinspection PyUnresolvedReferences
 class Main(QWidget):
     def __init__(self, debug: bool = False):
         super(Main, self).__init__()
@@ -185,18 +184,21 @@ class Main(QWidget):
         self._move_lock = Lock()
         self._is_quiting = False
 
-        # self.setWindowFlags(
-        #     Qt.FramelessWindowHint | QtCore.Qt.WindowStaysOnTopHint | Qt.Tool | Qt.WA_TransparentForMouseEvents)
-        # # 设置窗口背景透明
-        # self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-        # self.setWindowOpacity(self.running_config.config.get('window-opacity', 0.4))
+        self.setWindowFlags(
+            Qt.FramelessWindowHint | QtCore.Qt.WindowStaysOnTopHint | Qt.Tool | Qt.WA_TransparentForMouseEvents)
+        # 设置窗口背景透明
+        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        self.setWindowOpacity(self.running_config.config.get('window-opacity', 0.4))
+
+        # self.setMaximumWidth(520)
 
         self.show()
 
         self.lock = Lock()
         self.pressed_time = []
         self.pressed_lock = Lock()
-        self.danmaku_input = DanmakuInput(self.running_config)
+        self.danmaku_input = DanmakuInput(self, self.running_config)
+        self.danmaku_input.signal.connect(self.send_danmaku)
 
         try:
             pass
@@ -209,6 +211,8 @@ class Main(QWidget):
                 sys.exit(1)
 
         self.insert_queue: Queue = Queue()
+
+        # self.activated: bool = None
 
         screen_rect = app.desktop().screenGeometry()
         # width, height = screen_rect.width(), screen_rect.height()
@@ -230,6 +234,8 @@ class Main(QWidget):
         self.font.setWeight(self.running_config.config.get('font-weight', 75))
         self.fm = QFontMetrics(self.font)
 
+        self.resize(QSize(400, self.fm.height() * (self.running_config.config.get('pool-size', 4) + 1)))
+
         # self.labels = [DanmakuLabel(self) for _ in range(self.running_config.config.get('pool-size', 10) + 1)]
         self.labels = [DanmakuLabel(self, pen_width=self.running_config.config.get('border-width', 4)) for _ in
                        range(self.running_config.config.get('pool-size', 10))]
@@ -238,6 +244,8 @@ class Main(QWidget):
 
         self.vbox = QVBoxLayout()
         self.vbox_border = QVBoxLayout()
+        self.vbox_border.setSpacing(0)
+        self.vbox_border.setContentsMargins(0, 0, 0, 0)
         # self.vbox = QHBoxLayout()
         # self.vbox = QHBoxLayout()
         self.vbox.setSpacing(0)
@@ -246,13 +254,11 @@ class Main(QWidget):
         self.vbox.setDirection(QVBoxLayout.TopToBottom)
         # self.vbox_border.addChildLayout(self.vbox)
 
-        self.button_send = QPushButton('&Send')
-        self.button_send.clicked.connect(self.start_new_window)
         vbox_widget = QWidget()
         vbox_widget.setLayout(self.vbox)
         # self.vbox_boarder.addWidget(self.vbox)
         self.vbox_border.addWidget(vbox_widget)
-        self.vbox_border.addWidget(self.button_send)
+        self.vbox_border.addWidget(self.danmaku_input)
         self.setLayout(self.vbox_border)
         # self.setLayout(self.vbox)
 
@@ -278,14 +284,17 @@ class Main(QWidget):
         self.client_loop_start()
 
     def global_keyboard_hook_start(self):
-        try:
-            self.pressed_time = []
-            with keyboard.Listener(
-                    on_press=self.on_keyboard_press,
-                    on_release=self.on_keyboard_release)as listener:
-                listener.join()
-        except Exception as e:
-            logger.error(f"kbk_hook(): {e.__class__.__name__} {e}")
+        while not self._is_quiting:
+            try:
+                self.pressed_lock.acquire()
+                self.pressed_time = []
+                self.pressed_lock.release()
+                with keyboard.Listener(
+                        on_press=self.on_keyboard_press,
+                        on_release=self.on_keyboard_release)as listener:
+                    listener.join()
+            except Exception as e:
+                logger.error(f"kbk_hook(): {e.__class__.__name__} {e}")
 
     @staticmethod
     def get_key_code(key):
@@ -297,34 +306,81 @@ class Main(QWidget):
 
     def on_keyboard_press(self, key):
         key_code = self.get_key_code(key)
-        print('pressed', key_code)
+        # print('pressed', key_code)
         if self.running_config.config.get('send-danmaku-press-key', 'ctrl') in key_code:
+            self.pressed_lock.acquire()
             self.pressed_time.append((time.time(), key_code))
+            self.pressed_lock.release()
+
+    def send_danmaku(self, text: str, max_length: int = 19, retry: int = 3):
+        # 自动分割话语
+        danmaku_split = [text[(start * max_length):(start + 1) * max_length] for start in
+                         range(len(text) // max_length + 1)]
+        if len(danmaku_split) > 1:
+            logger.warning(f"long danmaku: {danmaku_split}")
+        for danmaku in danmaku_split:
+            resp = self.client.bilibili.send_danmaku(danmaku, roomid=self.running_config.config.get('room'))
+            js = json.loads(resp.content)
+            if js['code'] != 0:
+                logger.warning(f'Send failed! {danmaku} {resp.text}')
+                self.insert_queue.put(Danmaku.system(f"发送错误: {js.get('message')}"))
+                if js.get('message') != '超出限制长度' and retry > 1:
+                    self.send_danmaku(danmaku, retry=retry - 1)
+            if len(danmaku_split) > 1:
+                time.sleep(5)
 
     def on_keyboard_release(self, key):
         key_code = self.get_key_code(key)
-        print('released', key_code)
+        # print('released', key_code)
+        to_show: bool = False
         self.pressed_lock.acquire()
-        time_now = time.time()
-        if len(self.pressed_time) > 0:
-            while time_now - self.pressed_time[0][0] > self.running_config.config.get('send-danmaku-press-time', 2.0):
-                print(f'deleted: {self.pressed_time[0]}')
-                self.pressed_time = self.pressed_time[1:]
-        if self.running_config.config.get('send-danmaku-press-key', 'ctrl') in key_code:
-            count = 0
-            for i in range(len(self.pressed_time) - 1, -1, -1):
-                if self.pressed_time[i][1] == key_code:
-                    count += 1
-                    if count >= self.running_config.config.get('send-danmaku-press-times', 2):
-                        # TODO: Send danmaku!
-                        # resp = self.client.bilibili.send_danmaku('DANMAKU!!',
-                        #                                          roomid=self.running_config.config.get('room'))
-                        # logger.warning(f'{resp.text}')
-                        logger.warning(f'show()!!')
-                        # self.danmaku_input.show()
-                        # window_.show()
-                        break
+        try:
+            time_now = time.time()
+            if len(self.pressed_time) > 0:
+                while time_now - self.pressed_time[0][0] > self.running_config.config.get('send-danmaku-press-time',
+                                                                                          2.0):
+                    # print(f'deleted: {self.pressed_time[0]}')
+                    self.pressed_time = self.pressed_time[1:]
+            if self.running_config.config.get('send-danmaku-press-key', 'ctrl') in key_code:
+                count = 0
+                for i in range(len(self.pressed_time) - 1, -1, -1):
+                    if self.pressed_time[i][1] == key_code:
+                        count += 1
+                        if count >= self.running_config.config.get('send-danmaku-press-times', 2):
+                            # logger.warning(f'show()!!')
+                            to_show = True
+                            break
+        except IndexError:
+            pass
         self.pressed_lock.release()
+        if to_show:
+            # state: int = int(self.windowState())
+            # logger.warning(f"state now: {state}, active: {Qt.WindowActive}")
+            # logger.warning(f"state & Qt.WindowActive = {state & Qt.WindowActive}")
+            # if state & Qt.WindowActive != 0:
+            #     self.setWindowState(Qt.WindowNoState | Qt.WindowMinimized)
+            # else:
+
+            # if self.activated is None or not self.activated:
+            #     self.activated = True
+            #
+            # else:
+            #     self.activated = False
+            #     self.setWindowState(Qt.WindowNoState)
+
+            # if self.isActiveWindow():
+            #     pass
+            # else:
+            #     self.activateWindow()
+            # self.raise_()
+            logger.warning(f"activate!")
+            self.activateWindow()
+            time.sleep(1)
+            self.setWindowState(self.windowState() & Qt.WindowMinimized | Qt.WindowActive)
+            time.sleep(1)
+            self.showNormal()
+            time.sleep(1)
+            self.danmaku_input.line_edit.setFocus()
 
     def start_new_window(self):
         self.danmaku_input.show()
@@ -383,7 +439,7 @@ class Main(QWidget):
                 await self.client.connectServer()
                 if self.client.connected:
                     break
-                logger.warning(f"re-connecting...")
+                # logger.warning(f"re-connecting...")
         except KeyboardInterrupt:
             logger.warning(f"closing...")
             self.client.close_connection()

@@ -13,7 +13,7 @@ class RunningConfig:
             'debug': True,
             'offset': [0, 0],
             'version': RunningConfig.VERSION,
-            'pool-size': 12,
+            'pool-size': 5,
             'font': '微软雅黑',
             'font-size': 13,
             'font-weight': 75,
