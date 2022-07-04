@@ -166,7 +166,7 @@ class DanmakuInput(QWidget):
         self.line_edit.clearFocus()
         self.line_edit.setText("")
         t = threading.currentThread()
-        print(f"currentThread = {t.ident}, emmit: ", text)
+        # print(f"currentThread = {t.ident}, emmit: ", text)
         self.signal.emit(text)
 
 
@@ -189,9 +189,16 @@ class Main(QWidget):
         self._is_quiting = False
 
         self.setWindowFlags(
-            Qt.FramelessWindowHint | QtCore.Qt.WindowStaysOnTopHint | Qt.Tool | Qt.WA_TransparentForMouseEvents)
+            Qt.FramelessWindowHint
+            | QtCore.Qt.WindowStaysOnTopHint
+            | Qt.Tool
+            | Qt.WA_TransparentForMouseEvents
+        )
         # 设置窗口背景透明
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.setAttribute(Qt.WA_AcceptDrops, True)
+        self.setAttribute(Qt.WA_InputMethodEnabled, True)
         self.setWindowOpacity(self.running_config.config.get('window-opacity', 0.4))
 
         # self.setMaximumWidth(520)
@@ -291,6 +298,10 @@ class Main(QWidget):
         # th.start()
         
         self.client_loop_start()
+    
+    def closeEvent(self, e: QtGui.QCloseEvent):
+        super().closeEvent(e)
+        sys.exit(0)
 
     def global_keyboard_hook_start(self):
         while not self._is_quiting:
@@ -325,7 +336,7 @@ class Main(QWidget):
     send_time_limit = 5.0
     
     def send_danmaku(self, text: str, max_length: int = 19, retry: int = 3):
-        print(f"send_danmaku: {time.time()}")
+        # print(f"send_danmaku: {time.time()}")
         if time.time() - self.last_send_time < self.send_time_limit and self.last_send_time != 0.0:
             sleep_time_last = abs(self.send_time_limit - time.time() + self.last_send_time)
             sleep_time = min(self.send_time_limit, sleep_time_last)
@@ -397,11 +408,11 @@ class Main(QWidget):
             # self.raise_()
             logger.warning(f"activate!")
             self.activateWindow()
-            time.sleep(1)
+            time.sleep(0.1)
             self.setWindowState(self.windowState() & Qt.WindowMinimized | Qt.WindowActive)
-            time.sleep(1)
+            time.sleep(0.1)
             self.showNormal()
-            time.sleep(1)
+            time.sleep(0.1)
             self.danmaku_input.line_edit.setFocus()
 
     def start_new_window(self):
@@ -460,7 +471,8 @@ class Main(QWidget):
         self.log(f'服务器连接成功')
         # resp = self.client.bilibili.send_danmaku('HI!!', roomid=744432)
         # logger.warning(f'{resp.text}')
-        self.th_send_danmaku_listener.start()
+        if Constant.enable_keyboard:
+            self.th_send_danmaku_listener.start()
         try:
             while True:
                 await self.client.connectServer()
