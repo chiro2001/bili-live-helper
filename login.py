@@ -51,7 +51,7 @@ class login():
         response = requests.post(url, params=payload, headers=app_headers)
         return response
 
-    def login_with_captcha(self, username, password):
+    def login_with_captcha(self, username, password, enable_cnn_server: bool = False):
         headers = {
             'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/62.0.3202.94 Safari/537.36',
             'cookie': "sid=hxt5szbb"
@@ -61,12 +61,16 @@ class login():
         res = s.get(url, headers=headers)
         tmp1 = base64.b64encode(res.content)
         for _ in range(login.auto_captcha_times):
-            try:
-                captcha = bilibili().cnn_captcha(tmp1)
-                break
-            except Exception:
-                Printer().printer("验证码识别服务器连接失败", "Error", "red")
-                login.auto_captcha_times -= 1
+            if enable_cnn_server:
+                try:
+                    captcha = bilibili().cnn_captcha(tmp1)
+                    break
+                except Exception:
+                    Printer().printer("验证码识别服务器连接失败", "Error", "red")
+                    login.auto_captcha_times -= 1
+            else:
+                Printer().printer("验证码识别服务器 disabled", "Warn", "yellow")
+                login.auto_captcha_times = 0
         else:
             try:
                 from PIL import Image
@@ -78,6 +82,7 @@ class login():
                 Printer().printer("安装 Pillow 库后重启，以弹出验证码图片", "Error", "red")
                 exit()
 
+        Printer().printer(f"use captcha: {captcha}", "Warn", "yellow")
         params_dic = {
             "actionKey": bilibili().dic_bilibili["actionKey"],
             "appkey": bilibili().dic_bilibili["appkey"],

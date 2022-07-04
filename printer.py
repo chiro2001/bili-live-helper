@@ -21,7 +21,7 @@ class Printer():
         return "[" + tmp + "]"
 
     # def printer(self, string, info, color, printable=True):
-    def printer(self, string, info, color, printable=False):
+    def printer(self, string, info, color, printable=True):
         ctm = self.current_time()
         tmp = "[" + str(info) + "]"
         row = "[" + str(inspect.stack()[1][3]) + ":" + str(

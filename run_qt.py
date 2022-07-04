@@ -227,6 +227,7 @@ class Main(QWidget):
         self.font = QFont()
         # 字体
         self.font.setFamily(self.running_config.config.get('font', '微软雅黑'))
+        # self.font.setFamily("SimHei")
         # 加粗
         self.font.setBold(self.running_config.config.get('font-bold', False))
         # 大小
@@ -281,6 +282,10 @@ class Main(QWidget):
         self.update_labels()
         self.th_insert.start()
         self.client: bilibiliClient = None
+        # th = Thread(target=self.client_loop)
+        # th.setDaemon(True)
+        # th.start()
+        
         self.client_loop_start()
 
     def global_keyboard_hook_start(self):
@@ -406,7 +411,9 @@ class Main(QWidget):
         loop.run_until_complete(self.client_loop())
         # asyncio.ensure_future(self.client_loop(), loop=_loop_main_window)
 
-    def log(self, text: str, **kwargs):
+    def log(self, text: str, console: bool = True, **kwargs):
+        if console:
+            print('[SYS]', text)
         danmaku: Danmaku = Danmaku.system(text)
         self.insert_danmaku(danmaku=danmaku, save=False, **kwargs)
 
@@ -418,7 +425,10 @@ class Main(QWidget):
             # print(danmaku)
             self.insert_danmaku(danmaku=danmaku, save=False)
         self.log('正在登录账号...')
-        login_result = await login().login_new()
+        try:
+            login_result = await login().login_new()
+        except Exception as e:
+            traceback.print_exception()
         if login_result is not None:
             self.log('账号登录失败!')
             logger.warning(f"{login_result}")
@@ -463,10 +473,11 @@ class Main(QWidget):
             self.insert_queue.put(danmaku)
 
     def do_insert(self):
-        vbox_size = [self.vbox.geometry().width(), self.vbox.geometry().height()]
-        if vbox_size[0] == vbox_size[1] == 0:
-            time.sleep(0.1)
-            self.do_insert()
+        # vbox_size = [self.vbox.geometry().width(), self.vbox.geometry().height()]
+        # if vbox_size[0] == vbox_size[1] == 0:
+        #     time.sleep(0.1)
+        #     self.do_insert()
+        
         # print(f'do_insert start.')
         danmaku = self.insert_queue.get(block=True)
         # logger.warning(f"got danmaku to insert: {danmaku}")
