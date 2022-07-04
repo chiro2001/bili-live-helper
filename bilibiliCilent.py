@@ -203,10 +203,10 @@ class bilibiliClient():
 
     async def ReceiveMessageLoop(self):
         while self.connected:
-            Printer().printer("self.ReadSocketData(4)...", "Warning", "yellow")
+            Printer().printer("self.ReadSocketData(4)...", "Warning", "yellow", printable=False)
             length = await self.ReadSocketData(4)
             if length is None:
-                Printer().printer("length is None", "Warning", "yellow")
+                Printer().printer("length is None", "Warning", "yellow", printable=False)
                 break
 
             packet_len, = struct.unpack('!I', length)
@@ -214,7 +214,7 @@ class bilibiliClient():
             if body is None:
                 Printer().printer("body is None", "Warning", "yellow")
                 break
-            Printer().printer(f"got body: {body}", "Warning", "yellow")
+            Printer().printer(f"got body: {body}", "Warning", "yellow", printable=False)
             await self.parse_packet(packet_len, body)
 
     async def parse_packet(self, packet_len: int, body: bytes):

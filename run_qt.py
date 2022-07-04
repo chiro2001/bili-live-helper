@@ -11,6 +11,8 @@ from queue import Queue
 import qasync
 import pymongo
 import requests
+import threading
+from threading import *
 
 from constant import Constant
 import utils
@@ -140,6 +142,7 @@ class DanmakuLabel(QLabel):
 # noinspection PyUnresolvedReferences
 class DanmakuInput(QWidget):
     signal = pyqtSignal(str)
+    
 
     def __init__(self, parent: QWidget, config: RunningConfig):
         super(DanmakuInput, self).__init__(parent)
@@ -162,7 +165,8 @@ class DanmakuInput(QWidget):
             return
         self.line_edit.clearFocus()
         self.line_edit.setText("")
-        # print(text)
+        t = threading.currentThread()
+        print(f"currentThread = {t.ident}, emmit: ", text)
         self.signal.emit(text)
 
 
@@ -316,11 +320,24 @@ class Main(QWidget):
             self.pressed_lock.acquire()
             self.pressed_time.append((time.time(), key_code))
             self.pressed_lock.release()
-
+    
+    last_send_time = 0.0
+    send_time_limit = 5.0
+    
     def send_danmaku(self, text: str, max_length: int = 19, retry: int = 3):
+        print(f"send_danmaku: {time.time()}")
+        if time.time() - self.last_send_time < self.send_time_limit and self.last_send_time != 0.0:
+            sleep_time_last = abs(self.send_time_limit - time.time() + self.last_send_time)
+            sleep_time = min(self.send_time_limit, sleep_time_last)
+            logger.warning(f"冷却中: {sleep_time}s ({sleep_time_last}s)")
+            if self.send_time_limit - sleep_time < 0.5:
+                logger.warning(f"放弃发送")
+                return
+            time.sleep(sleep_time)
+        self.last_send_time = time.time()
         # 自动分割话语
         danmaku_split = [text[(start * max_length):(start + 1) * max_length] for start in
-                         range(len(text) // max_length + 1)]
+                        range(len(text) // max_length + 1)]
         if len(danmaku_split) > 1:
             logger.warning(f"long danmaku: {danmaku_split}")
         for danmaku in danmaku_split:
@@ -332,7 +349,7 @@ class Main(QWidget):
                 if js.get('message') != '超出限制长度' and retry > 1:
                     self.send_danmaku(danmaku, retry=retry - 1)
             if len(danmaku_split) > 1:
-                time.sleep(5)
+                time.sleep(self.send_time_limit)
 
     def on_keyboard_release(self, key):
         key_code = self.get_key_code(key)
