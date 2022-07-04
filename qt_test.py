@@ -10,6 +10,8 @@ def main():
 
     hello_label = QtWidgets.QLabel(hello_widget)    # 添加一个标签
     hello_label.setText("hello wrold")              # 设置标签文字
+    
+    edit = QtWidgets.QLineEdit(hello_widget)
 
     hello_widget.show()                             # 显示窗体
     sys.exit(app.exec_())                           # 应用程序运行
