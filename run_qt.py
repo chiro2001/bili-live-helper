@@ -84,9 +84,9 @@ class DanmakuLabel(QLabel):
         return QPixmap(QImage(np.zeros(shape=(self.fixed_size.height(), self.fixed_size.width(), 4), dtype=np.uint8),
                               self.fixed_size.width(), self.fixed_size.height(), QImage.Format_RGBA8888))
 
-    def paintEvent(self, event: QtGui.QPaintEvent) -> None:
+    def paintEvent(self, event: QtGui.QPaintEvent):
         super(DanmakuLabel, self).paintEvent(event)
-        self.adjustSize()
+        # self.adjustSize()
         if self.cache_image is None:
             self.cache_image = self.get_new_image()
             self.setPixmap(self.cache_image)
@@ -96,8 +96,8 @@ class DanmakuLabel(QLabel):
             if self.cache_id == id(self.danmaku):
                 # logger.warning(f"{self.danmaku}, {id(self.danmaku)}, {self.text()}")
                 # logger.warning(f"DanmakuLabel.paintEvent({self.text()}) CACHED")
-                self.setPixmap(self.cache_image)
-                pass
+                if Constant.enable_repaint:
+                    self.setPixmap(self.cache_image)
             else:
                 # logger.warning(f"DanmakuLabel.paintEvent({self.danmaku}) UPDATED")
                 colors = [QColor(127, 127, 127) for _ in range(4)]
@@ -478,10 +478,11 @@ class Main(QWidget):
                 await self.client.connectServer()
                 if self.client.connected:
                     break
-                # logger.warning(f"re-connecting...")
+                logger.warning(f"re-connecting...")
         except KeyboardInterrupt:
             logger.warning(f"closing...")
             self.client.close_connection()
+        logger.warning(f"client_loop done")
 
     def update_labels(self):
         for i in range(len(self.labels)):

@@ -157,6 +157,7 @@ class bilibiliClient():
             return bytes_data
         len_remain = len_wanted
         while len_remain != 0:
+            Printer().printer(f'while len_remain != 0:', "warn", "yellow", printable=False)
             try:
                 tmp = await asyncio.wait_for(self._reader.read(len_remain), timeout=35.0)
             except asyncio.TimeoutError:
